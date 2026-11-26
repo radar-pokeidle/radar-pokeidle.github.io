@@ -1,0 +1,8 @@
+User-Agent: *
+Allow: /
+Disallow: /visitas/
+Disallow: /conta/
+Disallow: /entrar/
+Disallow: /obrigado/
+
+Sitemap: https://radar-pokeidle.github.io/sitemap.xml

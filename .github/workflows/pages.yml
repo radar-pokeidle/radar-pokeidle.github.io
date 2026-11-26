@@ -1,0 +1,63 @@
+# Robô do site (copiado para radar-pokeidle/radar-pokeidle.github.io/.github/workflows/ pelo scripts/publicar-pages.mjs).
+# A cada ~10 min (e a cada site novo): lê o banco uma vez, grava site/dados/*.json e publica no GitHub Pages.
+# Se o banco não responder, o robô falha e o site fica com os dados da última vez (não publica dado velho por cima).
+name: site
+on:
+  push:
+    branches: [main]
+  schedule:
+    # 23/11: a cada 3 h até o gerador ler só o que mudou (o tráfego do banco estourou o plano grátis); depois o banco
+    # dispara a cada 10 min (radar_disparar_site, pg_cron) e este relógio vira reserva
+    - cron: "15 */3 * * *"
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages
+  cancel-in-progress: false
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    environment:
+      name: github-pages
+      url: ${{ steps.publicacao.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      # estado do gerador (anúncios e vendas já lidos): volta o da última execução que deu certo, e o gerador busca no
+      # banco só o que mudou. Sem estado (ou com mais de 24 h), lê tudo.
+      - uses: actions/cache/restore@v6
+        with:
+          path: gerador/estado
+          key: radar-estado-${{ github.run_id }}
+          restore-keys: radar-estado-
+      - name: Gerar os dados
+        working-directory: gerador
+        env:
+          RADAR_SUPABASE_URL: ${{ vars.RADAR_SUPABASE_URL }}
+          RADAR_SUPABASE_CHAVE: ${{ vars.RADAR_SUPABASE_CHAVE }}
+          RADAR_ESTADO_DIR: estado
+        run: node gerador.mjs ../site/dados
+      # guarda logo depois de gerar (só se gerou): uma falha na publicação não perde o estado
+      - uses: actions/cache/save@v6
+        with:
+          path: gerador/estado
+          key: radar-estado-${{ github.run_id }}-${{ github.run_attempt }}
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+      # às vezes o GitHub ainda não lista o pacote recém-enviado ("Found 0 artifact(s)"): espera e tenta de novo
+      - id: publicacao
+        continue-on-error: true
+        uses: actions/deploy-pages@v5
+      - if: steps.publicacao.outcome == 'failure'
+        run: sleep 45
+      - if: steps.publicacao.outcome == 'failure'
+        uses: actions/deploy-pages@v5
